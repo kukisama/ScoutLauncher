@@ -1,0 +1,108 @@
+# 发布新版本时自动编译并生成 MSI 安装包 Release。
+#
+# 触发方式：推送形如 v1.2.0 的版本 tag。
+#   git tag v1.2.0
+#   git push origin v1.2.0
+#
+# 产物：Scout Loader-<版本>.msi（内含 Scout Loader.exe + dictionary.zh-CN.json），
+# 自动附加到对应版本号的 GitHub Release。
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write   # 创建 Release / 上传产物需要
+
+jobs:
+  build-msi:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 解析版本号（去掉 tag 前缀 v）
+        id: ver
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = $tag -replace '^v', ''
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "版本号格式应为 x.y.z，实际为 '$version'（tag: $tag）"
+          }
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "版本号: $version"
+
+      - name: 写入程序集版本号
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.version }}.0"
+          $cs = "src/ScoutZh.cs"
+          (Get-Content $cs -Raw) `
+            -replace 'AssemblyVersion\("[^"]*"\)', "AssemblyVersion(""$v"")" `
+            -replace 'AssemblyFileVersion\("[^"]*"\)', "AssemblyFileVersion(""$v"")" `
+            | Set-Content $cs -Encoding UTF8
+          Write-Host "AssemblyVersion / AssemblyFileVersion -> $v"
+
+      - name: 编译 Scout Loader.exe
+        shell: pwsh
+        working-directory: src
+        run: powershell -ExecutionPolicy Bypass -File build-exe.ps1
+
+      - name: 准备打包目录（产物 + 图标 + 脚本 + 许可）
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path staging | Out-Null
+          Copy-Item "src/Scout Loader.exe"        -Destination staging/
+          Copy-Item "dist/dictionary.zh-CN.json"  -Destination staging/
+          Copy-Item "src/scout.ico"               -Destination staging/
+          Copy-Item "installer/ScoutLauncher.wxs" -Destination staging/
+          Copy-Item "installer/license.rtf"       -Destination staging/
+
+      - name: 安装 WiX Toolset + UI 扩展
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix
+          $toolsDir = Join-Path $env:USERPROFILE ".dotnet\tools"
+          $toolsDir | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          $wix = Join-Path $toolsDir "wix.exe"
+          $raw = (& $wix --version | Select-Object -First 1)
+          $ver = ($raw -split '\+')[0].Trim()
+          Write-Host "WiX: $raw -> 扩展匹配版本: $ver"
+          # WiX v7 起：extension add 与 build 均需先接受 OSMF EULA。
+          & $wix eula accept wix7
+          if ($LASTEXITCODE -ne 0) { throw "wix eula accept 失败（退出码 $LASTEXITCODE）" }
+          & $wix extension add -g "WixToolset.UI.wixext/$ver"
+          if ($LASTEXITCODE -ne 0) { throw "wix extension add 失败（退出码 $LASTEXITCODE）" }
+
+      - name: 构建 MSI（英文向导 + 选路径 + 桌面快捷方式）并打包 zip
+        shell: pwsh
+        working-directory: staging
+        run: |
+          $version = "${{ steps.ver.outputs.version }}"
+          $msi = "Scout Loader-$version.msi"
+          # -culture en-US 明确使用英文安装向导。
+          wix build ScoutLauncher.wxs -culture en-US -acceptEula wix7 -ext WixToolset.UI.wixext -d ProductVersion=$version -o "$msi"
+          if ($LASTEXITCODE -ne 0) { throw "wix build 失败（退出码 $LASTEXITCODE）" }
+          if (-not (Test-Path "$msi")) { throw "未生成 MSI：$msi" }
+          $sz = [math]::Round((Get-Item "$msi").Length/1KB); Write-Host "生成 MSI: $msi ($sz KB)"
+          # MSI 打进 zip（输出到仓库根目录，供发布步骤上传）+ SHA256。
+          $zip = "Scout Loader-$version.zip"
+          Compress-Archive -Path "$msi" -DestinationPath "../$zip" -Force
+          $hash = (Get-FileHash "../$zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $zip" | Out-File -FilePath "../$zip.sha256" -Encoding ascii
+          Write-Host "生成 zip: $zip (sha256=$hash)"
+
+      - name: 创建 Release 并上传 zip（内含 MSI）
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Scout Loader ${{ steps.ver.outputs.version }}
+          tag_name: ${{ github.ref_name }}
+          files: |
+            Scout Loader-${{ steps.ver.outputs.version }}.zip
+            Scout Loader-${{ steps.ver.outputs.version }}.zip.sha256
+          generate_release_notes: true

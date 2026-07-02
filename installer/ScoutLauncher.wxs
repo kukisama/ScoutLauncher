@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ScoutLauncher.wxs — WiX v5 installer definition for Scout Loader.
+
+  Packages the TWO deliverable files into a single MSI:
+    1. Scout Loader.exe          (the language-neutral loader)
+    2. dictionary.zh-CN.json     (the zh-CN language pack)
+
+  Both are installed into the same folder so the exe finds its dictionary.
+  A Start-Menu shortcut is created; icon and Add/Remove metadata are set.
+
+  Build (version comes from the git tag, injected by CI):
+    wix build ScoutLauncher.wxs -d ProductVersion=1.2.0 -o "Scout Loader.msi"
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package Name="Scout Loader (Scout 中文汉化加载器)"
+           Manufacturer="ScoutLauncher"
+           Version="$(ProductVersion)"
+           UpgradeCode="7B2F4C1E-9A3D-4E6F-8B21-3C5D7E9F0A12"
+           Scope="perMachine"
+           Codepage="65001"
+           Compressed="yes">
+
+    <!-- In-place upgrades: installing a newer version replaces the old one. -->
+    <MajorUpgrade DowngradeErrorMessage="已安装更新版本的 Scout Loader，无法降级安装。" />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="ScoutIcon" SourceFile="scout.ico" />
+    <Property Id="ARPPRODUCTICON" Value="ScoutIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/kukisama/ScoutLauncher" />
+
+    <!-- 安装向导：允许用户自定义安装目录（InstallDirDlg 绑定到 INSTALLFOLDER）。 -->
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+    <ui:WixUI Id="WixUI_InstallDir" />
+    <!-- 许可/说明页文本（中文，构建时由 CI 生成）。 -->
+    <WixVariable Id="WixUILicenseRtf" Value="license.rtf" />
+
+    <!-- Install location: %ProgramFiles%\Scout Loader（可在向导中修改） -->
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="Scout Loader" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="AppShortcutFolder" Name="Scout Loader" />
+    </StandardDirectory>
+    <!-- 桌面：用于放置桌面快捷方式。 -->
+    <StandardDirectory Id="DesktopFolder" />
+
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+      <!-- File 1: the loader executable (+ 开始菜单 / 桌面快捷方式). -->
+      <Component Id="MainExe" Guid="*">
+        <File Id="ScoutLoaderExe" Source="Scout Loader.exe" KeyPath="yes">
+          <Shortcut Id="StartMenuShortcut"
+                    Directory="AppShortcutFolder"
+                    Name="Scout Loader"
+                    Icon="ScoutIcon"
+                    Advertise="yes" />
+          <Shortcut Id="DesktopShortcut"
+                    Directory="DesktopFolder"
+                    Name="Scout Loader"
+                    Icon="ScoutIcon"
+                    Advertise="yes" />
+        </File>
+      </Component>
+
+      <!-- File 2: the zh-CN language pack, next to the exe. -->
+      <Component Id="Dictionary" Guid="*">
+        <File Id="DictZhCN" Source="dictionary.zh-CN.json" KeyPath="yes" />
+      </Component>
+
+      <!-- Clean up the Start Menu folder on uninstall. -->
+      <Component Id="CleanupShortcutFolder" Guid="*">
+        <RemoveFolder Id="RemoveAppShortcutFolder" Directory="AppShortcutFolder" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\ScoutLoader" Name="installed"
+                       Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Package>
+</Wix>

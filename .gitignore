@@ -1,0 +1,11 @@
+# 运行时产物（不入库）
+scout-loader.log
+missing.*.json
+missing.*.skeleton.json
+
+# 编译产物（src 下的临时输出；正式可执行文件放 dist/）
+src/*.exe
+
+# 系统/编辑器杂项
+Thumbs.db
+.DS_Store
