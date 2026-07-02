@@ -58,7 +58,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path staging | Out-Null
           Copy-Item "src/Scout Loader.exe"        -Destination staging/
-          Copy-Item "dist/dictionary.zh-CN.json"  -Destination staging/
+          Copy-Item "lang/dictionary.zh-CN.json"  -Destination staging/
           Copy-Item "src/scout.ico"               -Destination staging/
           Copy-Item "installer/ScoutLauncher.wxs" -Destination staging/
           Copy-Item "installer/license.rtf"       -Destination staging/

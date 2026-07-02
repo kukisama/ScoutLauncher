@@ -3,7 +3,7 @@ scout-loader.log
 missing.*.json
 missing.*.skeleton.json
 
-# 编译产物（src 下的临时输出；正式可执行文件放 dist/）
+# 编译产物（src 下的临时输出；exe 由 CI 现编译，不入库）
 src/*.exe
 
 # 系统/编辑器杂项
